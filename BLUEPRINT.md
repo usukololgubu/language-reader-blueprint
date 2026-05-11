@@ -63,9 +63,10 @@ stories you can iterate on.
 | **Reader profile** | `profile.md` — the user's level, taste, anti-vibes, and shared-universe spec. The agent re-reads this before every generation. |
 | **Story** | One short text. Lives in `stories/NN-slug/` together with its enrichment data and rendered HTML. |
 | **Enrichment** | `enrichment.toml` — per-word translations, parts of speech, lemmas, and optional grammar; per-sentence and per-phrase translations. |
-| **Render** | The hand-designed `index.html` page produced for one story. Each story gets its own design — no shared base template. |
+| **Render** | The hand-designed `index.html` page produced for one story. Each story gets its own design — no shared base template. The designer (LLM) writes the page freely; a small helper script then applies enrichment to wrap words and inject popup behavior. |
 | **Hover popup** | The UI affordance shown when the user hovers (or taps) a wrapped word in the rendered HTML. Contains translation, POS, lemma, dictionary link, optional grammar block. |
 | **Grammar mini-language** | A tiny markdown-ish syntax (`**form**`, `*term*`, `` `code` ``, `[[suffix]]`) used inside `enrichment.toml`'s `grammar` field, parsed at popup-show time by an inline JS function `mdToHtml()`. |
+| **Render helper script** | Small program (Python 3.11+ in the reference implementation) that applies `enrichment.toml` to a designer-authored HTML page: walks the element marked `data-story-body`, wraps words/sentence-terminators with popup spans, auto-injects popup CSS+JS, and refreshes the project index. Re-runnable. |
 | **Project index** | The root `index.html` — a reader-friendly table of contents listing all stories. |
 
 ---
@@ -234,12 +235,14 @@ After the interview, create this layout:
 │   └── skills/
 │       ├── story/SKILL.md       ← writes pure target-language story.md
 │       ├── enrich/SKILL.md      ← writes enrichment.toml
-│       └── render/SKILL.md      ← writes per-story index.html + refreshes project index
+│       └── render/
+│           ├── SKILL.md         ← guides the LLM to design the per-story page
+│           └── render.py        ← helper: applies enrichment, refreshes project index
 └── stories/
     └── NN-slug/             ← one folder per story
         ├── story.md         ← Spanish/French/Japanese/... body + frontmatter
         ├── enrichment.toml  ← per-word, per-sentence, per-phrase data
-        └── index.html       ← bespoke render
+        └── index.html       ← bespoke designer-authored render (script wraps words in place)
 ```
 
 ### `profile.md` template
@@ -569,20 +572,122 @@ Rules:
 self-contained HTML page implementing the hover-popup vocabulary system. Then
 refresh the project-wide `index.html` to add an entry for the new story.
 
+**The split — design vs. mechanical wiring**
+
+This skill is delivered in **two pieces** because the work splits cleanly:
+
+- The **designer** (LLM) writes the HTML page freely — palette, typography,
+  layout, illustration, popup look. The only contract is one attribute on the
+  element wrapping the story body: `data-story-body`.
+- The **helper script** (`.ai/skills/render/render.py`) walks inside that
+  element, wraps every word and sentence-terminator with the right `data-*`
+  spans using `enrichment.toml`, and auto-injects two managed blocks: popup
+  CSS invariants in `<head>`, popup JS before `</body>`. Re-runnable.
+
+The bespoke design choices that make a story page distinctive are LLM
+territory. The repetitive, easy-to-get-wrong-by-hand wiring (escaping,
+sentence pairing, popup behavior invariants) is the script's job. Letting the
+script handle the latter frees the designer to push the design without
+boilerplate fatigue.
+
 **Inputs**:
 - `stories/NN-slug/story.md`
 - `stories/NN-slug/enrichment.toml`
 - `profile.md`
-- The existing project `index.html` (to preserve other entries when refreshing)
+- The existing project `index.html` (the script preserves it and refreshes only the entries list)
+- The helper script at `.ai/skills/render/render.py`
 
 **Output**:
-- `stories/NN-slug/index.html` (new)
-- `index.html` (updated)
+- `stories/NN-slug/index.html` (designer writes the page; script applies enrichment in place)
+- `index.html` (auto-updated by the script)
 
 This skill has two contracts: **functional** (the popup system must work the
-same across all stories) and **design** (every story must look different).
+same across all stories — enforced by the script) and **design** (every story
+must look different — the LLM's job).
+
+#### Designer's contract
+
+The `index.html` file is a complete self-contained HTML document. The designer
+writes it however they want. The only required element:
+
+```html
+<article data-story-body>
+  <p>{paragraph 1 of story.md, verbatim}</p>
+  <p>{paragraph 2 of story.md, verbatim}</p>
+  ...
+</article>
+```
+
+- The Spanish/French/Japanese/... text inside `<p>` tags matches the body of
+  `story.md` exactly, paragraph for paragraph.
+- The wrapping element can be `<article>`, `<div>`, `<section>` — anything;
+  the script keys off the `data-story-body` attribute.
+- HTML inside paragraphs is preserved on tokenization (you can use `<em>`,
+  `<small>`, etc. — only text between tags is wrapped).
+- Everything else in the document is the designer's choice: structure,
+  styles, fonts, hero SVG, popup look.
+
+The script auto-manages two blocks (the designer **must not** hand-edit them
+— each script run replaces them):
+
+- `<style data-popup-invariants>…</style>` at end of `<head>` — behavior-critical
+  popup CSS only (pointer-events, hit-area bridge, transitions). See
+  [Part 4 invariants 1 & 2](#part-4--critical-invariants) for what these are
+  and why they're locked.
+- `<script data-popup>…</script>` before `</body>` — popup show/hide/position
+  logic and `mdToHtml()`.
+
+Designer styles **everything visual** via their own `<style>` block (declared
+above the auto-managed block in source order — designer rules win because of
+the cascade). Classes the designer is expected to style:
+
+- `.w` and `.s` — word and sentence-terminator hover triggers (the script's
+  invariants set only `cursor` and a default `border-bottom: 1px dotted
+  currentColor`; designer can override base color, hover color, transition).
+- `.pop` — the floating tooltip container
+- `.pop.has-grammar` — wider variant when a grammar block is present
+- `.pop.sentence` — variant for sentence-terminator hover
+- `.pop .lemma`, `.pop .pos`, `.pop .tr` — popup contents in order
+- `.pop .g-block` and its descendants `b` / `i` / `code` / `u` — grammar block
+  rendered from the mini-language
+- `.pop .link` — dictionary link
+- `.pop.sentence .s-label`, `.pop.sentence .s-tr` — sentence popup parts
+
+To re-color word/sentence underlines on hover, use higher specificity
+(e.g. `article .w:hover`) since the auto-managed block uses `currentColor`.
+
+#### Helper script
+
+The reference implementation lives at `.ai/skills/render/render.py` in the
+project. It's ~500 lines of stdlib Python (3.11+, uses `tomllib`). Any
+language works — Node with a TOML dep, Bun, Deno — as long as the script
+honors the contract above.
+
+```bash
+# from project root
+py .ai/skills/render/render.py                                # auto-pick newest story; apply enrichment to existing index.html
+py .ai/skills/render/render.py stories/05-pasajero-unico
+py .ai/skills/render/render.py --bootstrap stories/06-foo     # write a minimal design scaffold for a new story
+py .ai/skills/render/render.py --bootstrap --force stories/05 # overwrite an existing index.html with a scaffold (destructive)
+py .ai/skills/render/render.py --index-only                   # only refresh the project-wide index.html
+```
+
+Reports sentences paired and any words missing from `[words.*]` so the user
+can extend the enrichment and re-run.
+
+**Re-runnability**: each run **strips prior `.w` / `.s` spans first**, then
+re-tokenizes. The designer can edit the Spanish text inside `<p>` tags freely
+between runs — the script picks up the edits. (Keep the body in sync with
+`story.md` so `enrich` re-runs aren't surprised.)
+
+**Bootstrap mode**: when starting a new story, `--bootstrap` writes a minimal
+HTML scaffold containing the body marker and the story paragraphs as plain
+`<p>` tags with default styling. The designer then redesigns from there.
 
 #### Functional contract — same for every story
+
+The script enforces this. The shape below is what the script emits; the
+designer doesn't write it by hand.
 
 ##### Word wrapping
 
@@ -594,6 +699,8 @@ Every meaningful word in the body is wrapped:
       data-pos="noun|verb|adj|adv|...|proper"
       data-lemma="dictionary form"
       data-grammar="**form** — *category*&#10;&#10;...">word</span>
+
+<span class="s" data-tr="full sentence translation">.</span>
 ```
 
 - `data-grammar` is OPTIONAL and only present if the TOML had a `grammar` field.
@@ -602,6 +709,8 @@ Every meaningful word in the body is wrapped:
 - Punctuation, numerals, and proper nouns stay **outside** `.w` spans
   (unless flagged as a `[[phrases]]` entry, in which case the phrase becomes one
   span).
+- Sentence-terminators (`.?!`) get a `.s` span paired in document order with
+  the corresponding `[[sentences]].tr` entry.
 
 ##### Popup behavior
 
@@ -720,60 +829,58 @@ story**, not a generic learner-app template.
 
 #### Project-index refresh
 
-After writing the story HTML, the render skill **also** updates the project
+After applying enrichment, the script **also** updates the project
 `index.html`:
 
-- Read it.
-- Locate the `<!-- STORIES:START -->` / `<!-- STORIES:END -->` markers. If
-  either is missing, **stop and tell the user** rather than guessing — the
+- Locates the `<!-- STORIES:START -->` / `<!-- STORIES:END -->` markers. If
+  either is missing, **stops with an error** rather than guessing — the
   markers are the contract; without them, "the entries list" isn't safely
   defined.
-- Insert a new `<a class="entry" href="stories/NN-slug/index.html">…</a>` block
-  immediately before `<!-- STORIES:END -->`.
-- Update the entry-count badge (e.g. `03 entradas` → `04 entradas`).
-- Preserve every existing entry between the markers verbatim — including the
-  user's hand-edits (custom hrefs, reordered rows, manual metadata tweaks).
-  The render skill only **adds** rows; it doesn't normalize or "fix" what the
-  user touched.
-- Preserve everything outside the markers byte-for-byte — header, footer,
+- Regenerates the entries list from the story frontmatter on disk
+  (enumerates every `stories/NN-slug/` folder and reads its `story.md`).
+- Updates the entry-count badge (e.g. `03 entradas` → `04 entradas`).
+- Preserves everything outside the markers byte-for-byte — header, footer,
   styles, scripts, design. This file is a stable artifact, not a per-render
   bespoke surface.
 
 #### Back-link
 
 Each story page has a small back-link to the project index. Path is
-`../../index.html` from `stories/NN-slug/index.html`.
+`../../index.html` from `stories/NN-slug/index.html`. The designer includes
+this in the page (it's not auto-injected).
 
 #### Workflow
 
 1. Read `story.md`, `enrichment.toml`, `profile.md`.
 2. Decide design direction (palette, fonts, illustration motif, layout).
    Briefly — internal, not shown to user.
-3. Tokenize the body. For each word, look up `[words."form"]` in the TOML,
-   build the `<span class="w" ...>` wrapper. Use `[[phrases]]` for multi-word
-   units (longest-match-wins).
-4. Build the full single-file HTML:
-   - `<!doctype html>`, `<html lang="<target>">`, `<meta charset="utf-8">`,
-     `<meta name="viewport">`
-   - `<title>` from frontmatter
-   - Google Fonts `<link rel="preconnect">` + stylesheet (only if
-     `External fonts: yes` in `profile.md`; omit entirely otherwise)
-   - Inline `<style>` with all design CSS
-   - `<body>` containing the back-link, optional metadata strip, hero SVG,
-     story body
-   - One `<div class="pop"></div>` mount point
-   - Inline `<script>` containing `mdToHtml()` plus popup behavior (~50–100
-     lines)
-5. Write to `stories/NN-slug/index.html`.
-6. Update the project `index.html` per above.
-7. Report: file path, one-sentence thematic summary (palette, font pair, motif),
-   and a hint command to open in browser.
+3. **Design the page**: write `stories/NN-slug/index.html` from scratch, or
+   run `py .ai/skills/render/render.py --bootstrap stories/NN-slug` for a
+   minimal scaffold to start from. The Spanish text goes inside an element
+   marked `data-story-body`; everything else (palette, fonts, hero SVG,
+   popup look) is the designer's choice. The designer styles `.w`, `.s`,
+   `.pop`, `.lemma`, `.pos`, `.tr`, `.g-block`, `.s-label`, `.s-tr`, `.link`
+   via their own `<style>` block.
+4. **Apply enrichment**: run `py .ai/skills/render/render.py stories/NN-slug`.
+   The script wraps every word and sentence-terminator inside
+   `[data-story-body]`, injects the popup CSS invariants and the popup JS,
+   and refreshes the project-wide `index.html`. If it reports missed words,
+   extend `enrichment.toml` and re-run (the script picks up the changes).
+5. Report to user: file path, one-sentence thematic summary (palette, font
+   pair, motif), missed words if any, and a hint command to open in browser.
 
 ---
 
 ## Part 4 — Critical invariants
 
 These are bugs already paid for in the baseline implementation. Don't repeat them.
+
+> Invariants 1 and 2 are auto-managed by the render helper script — it injects
+> them as `<style data-popup-invariants>` at the end of `<head>` on every run.
+> The designer should not duplicate or override these specific rules. The
+> invariants are still listed here because anyone porting the script to a new
+> language must implement them, and anyone debugging "popups flicker" should
+> check the auto-injected block first.
 
 ### Invariant 1 — Popup pointer-events when hidden
 
@@ -786,12 +893,10 @@ any word it happens to be sitting over from its previous show.
 .pop {
   pointer-events: none;   /* default: invisible AND non-blocking */
   opacity: 0;
-  visibility: hidden;
 }
 .pop.show {
   pointer-events: auto;   /* only intercept events while shown */
   opacity: 1;
-  visibility: visible;
 }
 ```
 
@@ -809,10 +914,11 @@ its height to ~12px, not 18px.
   content: '';
   position: absolute;
   bottom: -12px;     /* connects to word above */
-  left: 0;
-  right: 0;
+  left: -12px;
+  right: -12px;
   height: 12px;
 }
+.pop.below::after { bottom: auto; top: -12px; }   /* flip when popup renders below */
 ```
 
 **Symptom if too tall**: the bridge overlaps the line of words **below** the
@@ -1075,14 +1181,22 @@ silhouette on a tile roof, the popup mount, and inline `<script>` with
 
 Note:
 
-- The period is outside any span.
+- The period is outside any `.w` span — it gets a `.s` span instead, paired
+  with the corresponding `[[sentences]].tr` translation.
 - `data-grammar` newlines are encoded as `&#10;`, quotes as `&quot;`.
 - `Le` (capitalized) keeps its original casing; the TOML key was `le`.
 - Each `.w` carries everything the popup needs — the JS reads `dataset`
   properties and renders the popup from those alone. No external state.
+- **The designer doesn't write this fragment by hand.** They write the page
+  with `<p>Le chat dort sur le toit.</p>` inside `<article data-story-body>`,
+  then run the helper script which produces the wrapped output above. The
+  fragment is shown here so the reader understands what the script emits.
 
-This fragment plus the inline `<style>`, `<script>`, hero SVG, and popup mount
-constitute the complete single-file render.
+The full single-file render is: the designer's `<head>` (including their
+inline `<style>` with the bespoke palette and any Google Fonts links), their
+`<body>` with the back-link, hero SVG, and the `[data-story-body]` element
+holding the paragraphs — plus the script-injected `<style data-popup-invariants>`
+at end of `<head>` and `<script data-popup>` before `</body>`.
 
 ---
 
@@ -1125,6 +1239,16 @@ Things the agent must NOT do, even if it seems helpful.
 - ❌ Auto-fixing the user's existing custom files without asking.
 - ❌ Bypassing `pointer-events:none` on the hidden popup.
 - ❌ Bridge taller than ~12px.
+- ❌ Hand-tokenizing the body. Wrap your `<p>` tags inside an element with
+  `data-story-body` and let the helper script do it — it handles escaping,
+  sentence pairing, phrase matching, and the popup invariants correctly.
+- ❌ Hand-editing the auto-managed `<style data-popup-invariants>` or
+  `<script data-popup>` blocks. Style popups via your own CSS (declared above
+  the auto-managed block in source order); the script replaces these blocks on
+  every run.
+- ❌ Skipping the `data-story-body` attribute when designing a new page. The
+  script needs it to find the body region; without it, it errors out rather
+  than guessing.
 
 ### Tone
 
@@ -1181,14 +1305,25 @@ nuke the whole profile unless asked.
 
 ## Closing note to the AI agent reading this
 
-Generate the project on disk. Build the three skills. Run the interview, write
-`profile.md`. Then offer to generate the first story — let the user steer the
-topic. Step back and let them read.
+Generate the project on disk. Build the three skills (story, enrich, render),
+including the render helper script. Run the interview, write `profile.md`.
+Then offer to generate the first story — let the user steer the topic. Step
+back and let them read.
+
+The render flow is: design first (you write `index.html` freely with
+`data-story-body` on the body wrapper), then run the helper script to apply
+enrichment. Don't hand-tokenize the body. Don't hand-edit the auto-managed
+popup CSS / JS blocks. Style popups via your own CSS.
 
 If the user gives feedback like "popups are flickering", check the invariants
-in Part 4 first — those are the high-probability bugs. If the user gives
-feedback like "the stories feel generic", revisit the taste-profile section of
-the interview and push for more specificity.
+in Part 4 first — those are the high-probability bugs and they should be
+satisfied by the script's auto-injected `<style data-popup-invariants>` block;
+if not, the script's invariants block is wrong. If the user gives feedback
+like "the stories feel generic", revisit the taste-profile section of the
+interview and push for more specificity. If the user gives feedback like "the
+design feels generic", you're likely defaulting to AI-template aesthetics —
+invoke the `frontend-design` skill (or its equivalent in your agent) and
+commit to a bolder direction.
 
 If the user asks you to add a feature this blueprint forbids (a shared base
 template, an auto-grammar engine, external JS libraries), explain the tradeoff
