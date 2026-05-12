@@ -499,6 +499,26 @@ pos = "proper"
 note = "fictional NASA probe, launched 2031, the silent encounter in this story"
 ```
 
+#### TOML key quoting
+
+TOML bare keys allow only `A-Z a-z 0-9 _ -`. Surface forms that contain anything else — accents (`á é í ó ú`), `ñ`, `ü`, cedillas, the French elided `'`, CJK glyphs, anything non-ASCII — **must** be wrapped in double quotes in the table header. Without quotes, `tomllib` (and any spec-compliant TOML parser) rejects the file with a misleading `Expected ']' at the end of a table declaration` error pointing at the offending line.
+
+```toml
+# ✗ wrong — will fail at parse time
+[words.señal]
+[words.être]
+[words.猫]
+
+# ✓ correct — quoted keys
+[words."señal"]
+[words."être"]
+[words."猫"]
+```
+
+The two forms are equivalent for lookup (`words.get(form.lower())` works for either) — the quoting is purely a TOML-syntax requirement. When in doubt, quote: ASCII-only keys tolerate quotes too, so it's safe to standardize on always-quoted. The example schema above already follows this pattern (`[words."trabaja"]`); make it habit for every entry.
+
+The helper script (see [render skill](#33-render-skill)) wraps the TOML load in a `try/except`: when it sees this error class it surfaces a targeted hint naming the offending line and suggesting the quoted form, so the failure is self-correcting on the next run.
+
 #### Grammar mini-language
 
 Used inside `grammar = """..."""` strings. Parsed by the renderer's inline
@@ -630,12 +650,16 @@ writes it however they want. The only required element:
 The script auto-manages two blocks (the designer **must not** hand-edit them
 — each script run replaces them):
 
-- `<style data-popup-invariants>…</style>` at end of `<head>` — behavior-critical
-  popup CSS only (pointer-events, hit-area bridge, transitions). See
-  [Part 4 invariants 1 & 2](#part-4--critical-invariants) for what these are
+- `<style data-popup-invariants>…</style>` at end of `<head>` —
+  behavior-critical popup CSS (pointer-events, hit-area bridge,
+  transitions), plus the reading-progress hairline styling and the
+  `prefers-reduced-motion` guard. See
+  [Part 4 invariants](#part-4--critical-invariants) for the specific rules
   and why they're locked.
-- `<script data-popup>…</script>` before `</body>` — popup show/hide/position
-  logic and `mdToHtml()`.
+- `<script data-popup>…</script>` before `</body>` — popup
+  show/hide/position logic, the grammar parser `mdToHtml()`, and the
+  reading-progress scroll listener (which appends a
+  `<div class="reading-progress">` to body on load).
 
 Designer styles **everything visual** via their own `<style>` block (declared
 above the auto-managed block in source order — designer rules win because of
@@ -787,6 +811,71 @@ Behavior is driven by `Sentence translations:` in `profile.md`:
 
 Source the translations from `[[sentences]]` in the TOML.
 
+#### Found-document framing
+
+Every render is treated as **a specific in-universe artifact**, not "a story page about X". The page IS the document the protagonist would produce, receive, or be cataloged into — a found object the reader has stumbled on. This is the primary discipline that forces real variety; without it, even careful palette/font work drifts toward "yet another centered serif column on a dark bg".
+
+Each story has at least one natural artifact to pick from. Examples by protagonist:
+
+| Protagonist | Natural artifact |
+|-------------|------------------|
+| AI / observatory | terminal log, telemetry readout, system console output |
+| Anthropologist / observer | field journal, ethnographic notes, expedition diary |
+| Navigator / pilot | ship's bridge log, course-correction sheet, bridge HUD |
+| Biologist | lab notebook, specimen plate, sample-jar label sheet |
+| Linguist / translator | translation worksheet, gloss table, parallel manuscript |
+| Old protagonist / chronicler | handwritten letter, memorial placard, chronicle entry |
+| Engineer / mechanic | maintenance log, parts diagram, wiring schematic |
+| Astronomer / radio operator | observation log, signal trace plot, deep-survey sheet |
+| Cargo / customs / port officer | bill of lading, customs declaration, manifest |
+| Programmer / sysadmin | source file with comments, ticket queue, runbook |
+| Doctor / medic | medical chart, patient form, triage sheet |
+| Gardener / archivist | herbarium card, accession ledger, index card |
+
+The framing shapes **every** decision: title becomes a document header, metadata becomes the document's metadata (file number, paper stock, redactions, stamps), the prose lives where it would live on that artifact (numbered log entries, journal pages, form fields, gridded notebook), and decorations are the artifact's natural marks (timestamps, signatures, perforations, ink bleeds, registration crosses, censor bars). The target-language body still reads as continuous prose, but is *housed* inside the artifact's structure.
+
+Anti-pattern: the protagonist's profession leaks into a few decorative SVGs but the underlying page is still "centered serif column". That fails this discipline.
+
+#### Format archetypes — variety rule
+
+Pick the artifact's format from the named-archetype list below. The list is illustrative, not exhaustive — invent new archetypes when the story warrants. **Anti-repeat rule**: no archetype reused within 3 consecutive stories. After three stories away, an archetype may return, but the second take must be a visibly fresh interpretation (different palette, different layout primitive, different motion family) — never a re-skin.
+
+Named archetypes (mix freely with new ones):
+
+- **Terminal / system log** — monospace amber-on-black or green-on-black, timestamped lines, blinking cursor, ANSI box-drawing chrome
+- **Manuscript folio** — parchment, two-column with marginalia, illuminated drop cap, calligraphic display, rubricated initials
+- **Observation log / lab notebook** — gridded or ruled paper, handwriting body, monospace headers, plotted traces, marginal scribbles
+- **Customs form / port manifest** — bureaucratic grid, stamped fields, typewriter monospace, carbon-copy ink, official seal corner
+- **Telegram tape** — narrow column, perforation strip, ALL CAPS, STOP between sentences, ribbon-typewriter ink
+- **Magazine / newsprint spread** — multi-column halftone, era-specific display face, byline strip, pull-quote
+- **Museum placard / wall text** — gallery serif, paired columns, generous whitespace, brass-plaque header, plain background
+- **Bridge HUD / instrument readout** — vector lines, faux-radar, scanlines, sci-fi sans, telemetry numerals
+- **Handwritten letter** — paper texture, handwriting body, return-address block, postmark, signature flourish
+- **Field journal** — leather-board frame, pressed-plant illustrations, dated entries, ink-bleed, weathered paper
+- **Index card / library catalog card** — 3×5 ruled card, monospace, hand-stamped accession number
+- **Postcard** — illustration top, prose-on-the-back layout, stamp + postmark
+- **Parish chronicle / annal** — heavy display caps for the year, single-column with rubricated marks, ecclesiastical serif
+- **Engineering schematic** — line-art, callouts, parts list along the margin, drafting-style sans
+- **Source file with comments** — IDE chrome, line numbers, syntax-coloured prologue/epilogue, the story housed inside a docstring/comment block, status bar, blinking cursor
+
+The archetype determines: page chrome and "edges" (paper, console frame, card border), typography family, palette discipline (paper inks vs. console phosphors vs. plate-printed CMYK), layout primitive (single column / two-column / framed / gridded / freeform marginalia), motion sensibility (paper rustle vs. scanline drift vs. ink bleed vs. dial sway), and **what the metadata strip becomes** (file number, accession, dispatch number, frequency band, postal stamp).
+
+Keep a running mental note of the prior three stories' archetypes when planning a new render. If unsure, scan recent `stories/*/index.html` for their archetype before committing to one.
+
+#### Motion — auto-injected and designer-authored
+
+Two motion bits are auto-managed by the helper script (designers don't write them; they theme or hide them):
+
+- **Reading-progress hairline** — a `<div class="reading-progress">` is appended to `<body>` by the popup script. Its width tracks `scrollTop / (scrollHeight − clientHeight)`. CSS lives in the `<style data-popup-invariants>` block. The bar reads its color from the CSS variable `--accent` on `:root` or `body` (fallback `currentColor`). Each story declares `:root { --accent: <story-color>; }` so the bar matches the palette. Hide per-page with `.reading-progress { display: none; }` if it doesn't fit the design — but prefer themed over hidden.
+- **`prefers-reduced-motion` guard** — a media query in the same invariants block short-circuits all CSS animations and transitions and hides the reading bar when the user has opted out. Designer-authored motion must rely on standard CSS `animation` / `transition` declarations so this guard takes effect. If JS-driven motion is unavoidable, gate it on `window.matchMedia('(prefers-reduced-motion: reduce)').matches`.
+
+Designer-authored motion (optional, per-story):
+
+- **Ambient background motion** — a slow, low-opacity layer behind the text that reinforces mood: drifting starfield for cold sci-fi, slow conic-gradient drift for manuscript-warm, faint flicker/scanlines for hard sci-fi, ink-bleed wash for contemplative, paper-rustle for handwritten formats. Multi-second cycles, behind text, never animating the body text itself. Pure CSS keyframes or inline animated SVG — **no raster GIFs**, no external image URLs.
+- **Refined popup entrance** — override the default `.pop` / `.pop.show` transition with a story-themed reveal (filter blur → clear, small `translateY`, soft `scale(0.96) → 1`, ink-bleed). The behavior invariants (`opacity`, `pointer-events`, the `::after` bridge) must stay intact — enrich, don't replace. The `.w:hover` underline can also animate (e.g. a gradient `background-size` growing from 0 to 100%) instead of the static dotted line.
+
+Motion is decorative — every animation remains readable, slow, and quiet.
+
 #### Design contract — different for every story
 
 Every render must invent design choices driven by the story's frontmatter and
@@ -852,22 +941,36 @@ this in the page (it's not auto-injected).
 #### Workflow
 
 1. Read `story.md`, `enrichment.toml`, `profile.md`.
-2. Decide design direction (palette, fonts, illustration motif, layout).
+2. **Pick the found-document framing.** Identify what in-universe artifact
+   this story should *be* (see [Found-document framing](#found-document-framing)):
+   the protagonist's log, a letter, a customs form, an observation sheet,
+   a manuscript page, a source file, etc. Lock the artifact before any
+   visual decisions.
+3. **Pick the format archetype** from the named list (or invent a fresh
+   one). Check the prior 3 `stories/*/index.html` for their archetype — do
+   not reuse any of them. Record the archetype choice.
+4. Decide design direction *within the chosen archetype's idiom* —
+   palette, font pairing, page chrome, marginalia, motion family. The
+   choices serve the artifact, not generic "story page" aesthetics.
    Briefly — internal, not shown to user.
-3. **Design the page**: write `stories/NN-slug/index.html` from scratch, or
-   run `py .ai/skills/render/render.py --bootstrap stories/NN-slug` for a
-   minimal scaffold to start from. The Spanish text goes inside an element
-   marked `data-story-body`; everything else (palette, fonts, hero SVG,
-   popup look) is the designer's choice. The designer styles `.w`, `.s`,
-   `.pop`, `.lemma`, `.pos`, `.tr`, `.g-block`, `.s-label`, `.s-tr`, `.link`
-   via their own `<style>` block.
-4. **Apply enrichment**: run `py .ai/skills/render/render.py stories/NN-slug`.
+5. **Design the page**: write `stories/NN-slug/index.html` from scratch,
+   or run `py .ai/skills/render/render.py --bootstrap stories/NN-slug`
+   for a minimal scaffold to start from. The target-language text goes
+   inside an element marked `data-story-body`; everything else (palette,
+   fonts, hero SVG, popup look) is the designer's choice. The designer
+   styles `.w`, `.s`, `.pop`, `.lemma`, `.pos`, `.tr`, `.g-block`,
+   `.s-label`, `.s-tr`, `.link` via their own `<style>` block. Declare
+   `:root { --accent: <color>; }` so the auto-injected reading-progress
+   bar picks up the palette.
+6. **Apply enrichment**: run `py .ai/skills/render/render.py stories/NN-slug`.
    The script wraps every word and sentence-terminator inside
-   `[data-story-body]`, injects the popup CSS invariants and the popup JS,
-   and refreshes the project-wide `index.html`. If it reports missed words,
-   extend `enrichment.toml` and re-run (the script picks up the changes).
-5. Report to user: file path, one-sentence thematic summary (palette, font
-   pair, motif), missed words if any, and a hint command to open in browser.
+   `[data-story-body]`, injects the popup CSS invariants and the popup
+   JS, and refreshes the project-wide `index.html`. If it reports missed
+   words, extend `enrichment.toml` and re-run (the script picks up the
+   changes).
+7. Report to user: file path, **artifact + archetype** picked,
+   one-sentence thematic summary (palette, font pair, motif, motion
+   family), missed words if any, and a hint command to open in browser.
 
 ---
 
@@ -963,7 +1066,32 @@ A story's `NN-slug` is its identity. Don't rename slugs after publication; it
 breaks any bookmarks the user may have made. If a typo needs fixing, fix it in
 the `title` frontmatter field, not the slug.
 
-### Invariant 8 — Word-boundary edge cases
+### Invariant 8 — Reading-progress hairline + reduced-motion guard
+
+The helper script auto-injects a reading-progress `<div class="reading-progress">` into `<body>` on load and a scroll listener that tracks `scrollTop / (scrollHeight − clientHeight)`. The CSS sits in the same `<style data-popup-invariants>` block as the other popup invariants and is themable via `--accent`. The same block carries a `@media (prefers-reduced-motion: reduce)` guard that short-circuits all CSS animations and transitions and hides the progress bar.
+
+```css
+.reading-progress {
+  position: fixed; top: 0; left: 0; height: 2px; width: 0;
+  background: var(--accent, currentColor);
+  z-index: 1001; pointer-events: none;
+  transition: width 0.08s linear;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .reading-progress { display: none; }
+}
+```
+
+Designer-authored motion (ambient background layers, popup entrance animations, hover-underline draws, SVG keyframes) must use standard CSS `animation` / `transition` declarations rather than JS-driven `requestAnimationFrame` loops so this global guard actually applies. If JS-driven motion is unavoidable, gate it on `window.matchMedia('(prefers-reduced-motion: reduce)').matches`.
+
+**Symptom if missing**: progress bar visible to users who opted out of motion; ambient animations keep running for vestibular-sensitive users. Accessibility regression that won't show up in casual QA.
+
+### Invariant 9 — Word-boundary edge cases
 
 - Apostrophes in target languages (French *l'eau*, English *don't*, Italian
   *l'arte*) — these are often two grammatical words inside one
@@ -1211,7 +1339,7 @@ Things the agent must NOT do, even if it seems helpful.
   Vue, …).
 - ❌ Analytics, trackers, GTM, Mixpanel, anything that phones home.
 - ❌ External CDNs other than Google Fonts (and only when the user opted in).
-- ❌ Raster image files. Illustrations are inline SVG only.
+- ❌ Raster image files. Illustrations are inline SVG only. Motion comes from inline animated SVG (CSS keyframes or SMIL) or pure CSS animations — never raster GIFs, never as data URIs.
 - ❌ Auto-generated grammar engines that synthesize from POS + lemma. Curate
   data, parse with `mdToHtml()`, stay small.
 - ❌ Reusing `data-grammar` text across stories by referencing a shared
@@ -1230,6 +1358,16 @@ Things the agent must NOT do, even if it seems helpful.
 - ❌ Lorem ipsum or placeholder text anywhere.
 - ❌ Emoji as primary illustration. (Unicode dingbats as small typographic
   accents are OK if the design calls for it.)
+- ❌ Generic "story page" output — a render that could be lifted onto any
+  other story by swapping color and font. Each render commits to a specific
+  in-universe artifact (see [Found-document framing](#found-document-framing)).
+- ❌ Reusing a format archetype within the previous 3 stories
+  (see [Format archetypes — variety rule](#format-archetypes--variety-rule)).
+  After three stories away, a returning archetype must be a visibly fresh
+  interpretation, never a re-skin.
+- ❌ Profession-as-decorative-veneer — a few thematic SVGs glued onto an
+  otherwise-generic centered serif column. The artifact framing must shape
+  page chrome, metadata, layout, and motion, not just illustration.
 
 ### Implementation
 
@@ -1249,6 +1387,15 @@ Things the agent must NOT do, even if it seems helpful.
 - ❌ Skipping the `data-story-body` attribute when designing a new page. The
   script needs it to find the body region; without it, it errors out rather
   than guessing.
+- ❌ Unquoted non-ASCII TOML keys (`[words.señal]`). TOML bare keys are
+  ASCII-only; quote the form (`[words."señal"]`). See
+  [Part 3.2 — TOML key quoting](#toml-key-quoting).
+- ❌ Fast, loud, or attention-grabbing motion. Ambient layers must be slow
+  (multi-second cycles), low-opacity, and behind text. The body text itself
+  never moves once loaded.
+- ❌ JS-driven motion that ignores `prefers-reduced-motion`. Gate JS
+  animations on `matchMedia` or use CSS `animation` / `transition` so the
+  auto-injected guard applies.
 
 ### Tone
 
