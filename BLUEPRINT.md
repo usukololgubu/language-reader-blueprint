@@ -384,6 +384,56 @@ language anywhere in the body.>
   `profile.md` says "no moralizing", the story does not moralize.
 - Self-contained unless the user explicitly asked for a serial.
 
+#### Structural variety — give the renderer compositional material
+
+A continuous wall of prose pushes the downstream `render` skill toward a
+single centered column, because there is nothing else for it to lay out.
+Where the story's content naturally allows it, **break the body into
+structurally separable content blocks** so the renderer can distribute them
+across the page as side panels, pull quotes, split-screen segments, framed
+inserts, or marginalia.
+
+This is **optional, not mandatory**. A tightly braided contemplative
+monologue or a single confessional letter should stay continuous —
+segmentation imposed on the wrong story damages it. But when the structure
+permits, prefer outputs with naturally segmentable sections. Examples (mix
+freely; the right two or three per story, not all of them):
+
+- **Transmission logs** — timestamped signal entries, frequency or channel
+  headers, sender/receiver fields, short bursts of dispatcher voice
+- **Journal fragments** — dated diary or notebook entries, each self-
+  contained, written in the protagonist's first-person register
+- **Dialogue snippets** — short exchanges set apart from the surrounding
+  narration (an interrogation, a radio call, an overheard scrap)
+- **System messages** — terminal output, error codes, machine prompts,
+  automated status lines in a flat machine voice
+- **Flashback inserts** — short past-tense passages set off from the
+  present-tense frame, marking a memory or earlier scene
+- **Parallel scene fragments** — two or more scenes alternating in short
+  blocks (ship + station, observer + observed, surface + orbit)
+- **Observational side notes** — brief asides from the protagonist that
+  read as marginalia or footnote-style commentary on the main action
+- **Location/time jump separators** — labeled breaks between scenes (e.g.
+  *— Día 412, 03:00, sala de control —*) that signal the renderer to start
+  a fresh visual section
+
+**How to mark segmentation in the .md** — use conventional Markdown
+structure so the renderer can pick up the cues without bespoke parsing:
+
+- `>` blockquote for transmissions, log entries, system messages, and
+  quoted snippets
+- A short level-2 heading (`## …`) or a labeled separator line for
+  scene / location / time jumps
+- `***` or `---` horizontal rule for major structural breaks between
+  modular sections
+- Plain paragraphs for the continuous narrative spine
+
+Still pure target language. Still calibrated to `profile.md` (level,
+new-vocab ratio, anti-vibes). Still no inline glossary, no native language,
+no learner sidebars — **segmentation is a structural choice, not a
+learner-aid leak**. Per-word and per-sentence translations are produced
+later by `enrich`; the `.md` stays prose-only.
+
 **Workflow**:
 
 1. Read `profile.md`.
@@ -907,14 +957,109 @@ content. Same functional behavior, completely different visual identity.
   per render — no copy-paste from previous stories.
 - **Background texture**: subtle gradients, blur, SVG-filter noise, conic
   patterns, scanlines, vignettes — pick what fits. Atmospheric, not loud.
-- **Layout / composition**: vary across stories. Single-column centered,
-  asymmetric, side-margin metadata, faux-interface frames (log-entry consoles,
-  letter paper, hazard documents). The composition is part of the storytelling.
+- **Layout / composition**: vary aggressively across stories. **Avoid
+  defaulting to a single narrow horizontally centered text column** — that is
+  the AI-design comfort zone and reads as generic across stories. Reserve the
+  centered-column choice for stories that explicitly benefit from minimalism
+  (intimate monologue, brief confessional letter, museum-placard quiet).
+  Otherwise, reach for editorial, cinematic, atmospheric, spatially expressive
+  compositions: asymmetric grids, side-margin metadata, faux-interface frames
+  (log-entry consoles, letter paper, hazard documents), split-screen panes,
+  multi-column excerpts. The composition is part of the storytelling. See
+  [Layout philosophy](#layout-philosophy--editorial-cinematic-spatial) below
+  for the full toolkit and constraints.
 - **Reading width**: ~640–720px max for body text. Never less than 18px font
   size. Line-height 1.7–1.9 for low-CEFR readers, 1.6–1.7 for higher.
 
 The page should feel like the interior of a book imagined for **this specific
 story**, not a generic learner-app template.
+
+#### Layout philosophy — editorial, cinematic, spatial
+
+Treat the page as a designed spread, not a text dump piped into a column. The
+renderer should compose space deliberately — text, illustration, framing
+chrome, and ambient layers arranged like an editorial print spread or a
+genre-specific publication, while remaining fully static HTML/CSS. The narrow
+centered column is the path of least resistance and the easiest tell of
+generic AI design; only choose it when minimalism is the right answer for
+*this* story.
+
+**Permitted and encouraged techniques** (mix freely — most pages combine 3–5):
+
+- **Asymmetrical layouts** — text weighted off-axis, grids that break neatly,
+  alignment shifted left or right rather than centered around the page midline
+- **Offset or floating text regions** — paragraph blocks at varied indents,
+  callout blocks pulled into the margin, hanging headings, prose that wraps
+  around illustration or framing chrome
+- **Side annotations or contextual panels** — protagonist's marginalia,
+  parallel-column footnotes, paratextual stamps and labels along an edge,
+  datasheet metadata in a sidebar
+- **Pull quotes and highlighted fragments** — a single sentence enlarged in a
+  contrasting face, framed by hairlines, color blocks, or generous negative
+  space
+- **Split-screen compositions** — two-pane layouts where one side carries
+  prose and the other carries inline SVG, telemetry, a portrait, or
+  contrasting type
+- **Layered gradients and atmospheric backgrounds** — multiple gradient stops,
+  conic + radial + linear combined, behind faint SVG noise, vignettes, or
+  filter blurs
+- **Modular sections with distinct visual tone** — different blocks of the
+  story styled differently (journal section vs. console section vs. flashback
+  section on the same page), each with its own micro-treatment
+- **Controlled whitespace and experimental spacing** — generous gutters
+  between blocks, unconventional line-lengths per region, intentional
+  "negative space" passages between scenes
+- **Multi-column excerpts** — newspaper-style or manuscript-style multi-column
+  passages for specific blocks (not necessarily the whole story)
+- **Embedded "terminal", "transmission", or "log" blocks** — monospace
+  box-drawn frames, timestamped lines, signal-trace panels, console output
+  dropped inline among the prose
+- **Visual framing inspired by futuristic interfaces or genre publications** —
+  HUD chrome, dashboard panels, magazine masthead, editorial drop caps,
+  datasheet headers, signal-trace strips
+
+These techniques **compose**: a page can be a split-screen with a
+side-annotation column on the prose pane and an embedded transmission log on
+the other; or an asymmetric editorial spread with a pull quote, a multi-column
+lower section, and a layered gradient under everything. Lean into the story's
+content — if the source `.md` already segments into logs, journal entries, or
+scene fragments (see the [story skill's structural variety
+note](#structural-variety--give-the-renderer-compositional-material)),
+distribute those across the page rather than concatenating them into one
+column.
+
+**Constraints — non-negotiable**:
+
+- **Readability has priority.** Body text never drops below 18 px,
+  line-height in the range set by the Reading-width bullet above, contrast
+  ratio ≥ 4.5:1 against its background. Every decorative pass must improve
+  the page; if a flourish hurts reading, cut it.
+- **Layouts must remain responsive.** Use fluid units (`clamp()`,
+  `minmax()`, percentages, `vw/vh`), CSS Grid and Flexbox. Multi-column,
+  split-screen, and floating regions must collapse to a clean single column
+  on narrow viewports — no horizontal scroll, no overlapping text, no
+  truncated panels on mobile.
+- **Semantic HTML stays intact.** Story body still lives inside
+  `<article data-story-body>` with real `<p>`, `<h1>`, `<h2>`,
+  `<blockquote>`, `<aside>`, `<figure>` tags. Don't replace paragraphs with
+  `<div>` salad to hit a visual; don't strip headings for compactness; don't
+  break the structure the tokenizer depends on (paragraphs of text inside
+  the `data-story-body` element).
+- **Contrast and typography stay accessible.** Real font sizes, real
+  line-height, real color contrast — including inside framed panels,
+  marginalia, and split panes. Decorative scripts or display faces belong
+  on titles, pull quotes, and metadata strips — never on the body prose.
+- **Decorative effects never overpower the story text.** Ambient gradients,
+  framing chrome, marginalia, and split-pane visuals stay quieter than the
+  prose. If the eye lands on the decoration before the words, dial it back.
+  Pull quotes and highlights are the one allowed exception, and only
+  because they *are* story text.
+- **Motion is avoided unless explicitly requested.** Default to fully
+  static. The ambient-motion options described elsewhere in this contract
+  are opt-in, not default; they apply when the story or the user clearly
+  calls for atmosphere. When motion is used, follow the existing motion
+  rules (slow, low-opacity, behind text, `prefers-reduced-motion`
+  respected, no raster GIFs).
 
 #### Project-index refresh
 
@@ -1368,6 +1513,15 @@ Things the agent must NOT do, even if it seems helpful.
 - ❌ Profession-as-decorative-veneer — a few thematic SVGs glued onto an
   otherwise-generic centered serif column. The artifact framing must shape
   page chrome, metadata, layout, and motion, not just illustration.
+- ❌ Defaulting to a narrow horizontally centered single-column body. That
+  layout is allowed only when the story explicitly benefits from minimalism
+  (intimate monologue, brief confessional, museum-placard quiet); otherwise
+  the page must use the editorial / cinematic / spatial toolkit in
+  [Layout philosophy](#layout-philosophy--editorial-cinematic-spatial).
+- ❌ Decorative pass that pulls the reader's eye before the prose does.
+  Ambient gradients, framing chrome, marginalia, and split-pane visuals
+  stay quieter than the body text — pull quotes are the only allowed
+  exception, and only because they *are* story text.
 
 ### Implementation
 
@@ -1396,6 +1550,15 @@ Things the agent must NOT do, even if it seems helpful.
 - ❌ JS-driven motion that ignores `prefers-reduced-motion`. Gate JS
   animations on `matchMedia` or use CSS `animation` / `transition` so the
   auto-injected guard applies.
+- ❌ Body text below 18 px or contrast ratio 4.5:1, even inside framed
+  panels, marginalia, or split panes. Real font sizes everywhere the
+  reader actually reads.
+- ❌ Layouts that break on narrow viewports. Multi-column, split-screen,
+  and floating regions must collapse to a clean single column on mobile,
+  with no horizontal scroll and no overlapping text.
+- ❌ Replacing semantic `<p>` / `<h1>` / `<blockquote>` / `<aside>` with
+  `<div>` salad to hit a visual. The tokenizer and assistive tech both
+  depend on real structure inside `<article data-story-body>`.
 
 ### Tone
 
