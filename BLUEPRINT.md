@@ -47,6 +47,7 @@ stories you can iterate on.
   - [3.1 story](#31-story-skill)
   - [3.2 enrich](#32-enrich-skill)
   - [3.3 render](#33-render-skill)
+  - [3.4 Optional: scale-up patterns](#34-optional-scale-up-patterns)
 - [Part 4 — Critical invariants (hard-won bugs)](#part-4--critical-invariants)
 - [Part 5 — Worked example (FR → EN micro-story)](#part-5--worked-example)
 - [Part 6 — Anti-checklist](#part-6--anti-checklist)
@@ -68,6 +69,9 @@ stories you can iterate on.
 | **Grammar mini-language** | A tiny markdown-ish syntax (`**form**`, `*term*`, `` `code` ``, `[[suffix]]`) used inside `enrichment.toml`'s `grammar` field, parsed at popup-show time by an inline JS function `mdToHtml()`. |
 | **Render helper script** | Small program (Python 3.11+ in the reference implementation) that applies `enrichment.toml` to a designer-authored HTML page: walks the element marked `data-story-body`, wraps words/sentence-terminators with popup spans, auto-injects popup CSS+JS, and refreshes the project index. Re-runnable. |
 | **Project index** | The root `index.html` — a reader-friendly table of contents listing all stories. |
+| **Lore digest** | OPTIONAL. A markdown file (`lore.md`) at the project root capturing the shared universe's accumulated state — characters, locations, factions, recurring terms. Replaces the story skill's "scan every prior story for continuity" pass with one compact read. See [Part 3.4](#34-optional-scale-up-patterns). |
+| **Archetype log** | OPTIONAL. A `.ai/archetypes.jsonl` file recording each rendered story's chosen archetype, palette, and font pair. Replaces the render skill's "scan prior `stories/*/index.html`" pass. See [Part 3.4](#34-optional-scale-up-patterns). |
+| **Stories-index cache** | OPTIONAL. A `.ai/stories-index.json` file the helper script maintains so per-story renders refresh the project index incrementally instead of re-reading every `story.md`. See [Part 3.4](#34-optional-scale-up-patterns). |
 
 ---
 
@@ -231,7 +235,10 @@ After the interview, create this layout:
 ├── profile.md              ← interview answers + derived constraints
 ├── index.html              ← project-wide table of contents
 ├── BLUEPRINT.md            ← (optional) keep a copy of this file for reference
+├── lore.md                 ← (optional, Part 3.4) shared-universe digest
 ├── .ai/
+│   ├── archetypes.jsonl    ← (optional, Part 3.4) render-archetype log
+│   ├── stories-index.json  ← (optional, Part 3.4) helper-script cache (auto-generated)
 │   └── skills/
 │       ├── story/SKILL.md       ← writes pure target-language story.md
 │       ├── enrich/SKILL.md      ← writes enrichment.toml
@@ -244,6 +251,12 @@ After the interview, create this layout:
         ├── enrichment.toml  ← per-word, per-sentence, per-phrase data
         └── index.html       ← bespoke designer-authored render (script wraps words in place)
 ```
+
+The four files marked `(optional, Part 3.4)` carry small accelerations the
+agent decides to scaffold (or not) during initial setup. They cost almost
+nothing on day one and pay off as the corpus grows. The reference
+implementation includes them by default — the blueprint still works without
+any of them.
 
 ### `profile.md` template
 
@@ -315,6 +328,12 @@ Required structure:
 The project index is the only page that **persists across renders**. The
 [render skill](#33-render-skill) refreshes it after every new story but preserves
 the design and the entries already present.
+
+An **alternative layout** — a card grid where each card previews the linked
+story's palette on hover — is described in
+[Part 3.4](#34-optional-scale-up-patterns). It's a drop-in replacement for the
+TOC-style entries above and keeps the rest of this template (header, intro,
+stat, colophon, machine markers) intact.
 
 ---
 
@@ -437,13 +456,20 @@ later by `enrich`; the `.md` stays prose-only.
 **Workflow**:
 
 1. Read `profile.md`.
-2. Scan `stories/` for existing story.md files (read frontmatter only) to keep
-   tone consistent and avoid repeating premises.
+2. Load continuity context:
+   - **If `lore.md` exists** (see [Part 3.4](#34-optional-scale-up-patterns)),
+     read it. This is the recommended path once the shared universe has
+     accumulated enough entities that scanning frontmatters is no longer
+     compact enough.
+   - Otherwise, scan `stories/` for existing `story.md` files (frontmatter
+     only) to keep tone consistent and avoid repeating premises.
 3. If the user didn't specify a topic, suggest 2–3 concepts and let them pick.
 4. Draft the story, count words, fill frontmatter.
 5. Write to `stories/NN-slug/story.md`.
-6. Report: the slug, the title, the word count, and a one-sentence pitch. Do not
-   show the body unless asked — let the user read it in the rendered HTML.
+6. **If `lore.md` is in use**, append a per-story delta block listing the
+   *new* entities this story introduced (see [Part 3.4](#34-optional-scale-up-patterns)).
+7. Report: the slug, the title, the word count, and a one-sentence pitch. Do
+   not show the body unless asked — let the user read it in the rendered HTML.
 
 **Numbering**: NN is the next zero-padded integer after the highest existing
 story. Slug is in target language, transliterated to ASCII, lowercase,
@@ -910,7 +936,7 @@ Named archetypes (mix freely with new ones):
 
 The archetype determines: page chrome and "edges" (paper, console frame, card border), typography family, palette discipline (paper inks vs. console phosphors vs. plate-printed CMYK), layout primitive (single column / two-column / framed / gridded / freeform marginalia), motion sensibility (paper rustle vs. scanline drift vs. ink bleed vs. dial sway), and **what the metadata strip becomes** (file number, accession, dispatch number, frequency band, postal stamp).
 
-Keep a running mental note of the prior three stories' archetypes when planning a new render. If unsure, scan recent `stories/*/index.html` for their archetype before committing to one.
+Keep a running mental note of the prior three stories' archetypes when planning a new render. If unsure, scan recent `stories/*/index.html` for their archetype before committing to one — or maintain an [archetype log](#34-optional-scale-up-patterns) and read its last 3 lines instead of opening prior HTMLs.
 
 #### Motion — auto-injected and designer-authored
 
@@ -1077,6 +1103,13 @@ After applying enrichment, the script **also** updates the project
   styles, scripts, design. This file is a stable artifact, not a per-render
   bespoke surface.
 
+If the agent scaffolded an [incremental cache](#34-optional-scale-up-patterns),
+the script substitutes the full disk enumeration with a per-slug patch on
+per-story renders and falls back to a full rebuild whenever the cache's slug
+set diverges from disk. The contract above (markers, error-on-missing,
+byte-stable outside the markers) stays identical — the optimization only
+affects the path that produces the entries list.
+
 #### Back-link
 
 Each story page has a small back-link to the project index. Path is
@@ -1116,6 +1149,244 @@ this in the page (it's not auto-injected).
 7. Report to user: file path, **artifact + archetype** picked,
    one-sentence thematic summary (palette, font pair, motif, motion
    family), missed words if any, and a hint command to open in browser.
+
+---
+
+### 3.4 Optional: scale-up patterns
+
+This blueprint is read **once** when the agent scaffolds the project. There
+is no later pass that "adds optimizations after the corpus grows". So this
+section is a set of choices to make **at scaffold time** — the agent either
+wires each pattern into the initial project (and the skills that depend on
+it), or doesn't.
+
+The five patterns below are additive and independent. The blueprint as
+described in 3.1–3.3 works with none of them. The **reference implementation
+linked from this repository's README scaffolds all five by default** — they
+cost almost nothing on day one (the relevant files start empty or are
+auto-generated) and pay off as the corpus grows from "a handful of stories"
+to "dozens".
+
+If the agent wants to be conservative, it can ship without these and the
+project still functions; the user can ask later to retrofit any of them
+(but at that point the user is explicitly asking for the change, not the
+blueprint).
+
+Names of files and shape of records below are the reference shapes — pick
+what fits your agent, as long as the contract on each pattern is preserved.
+
+#### Lore digest — `lore.md`
+
+> Replaces the story skill's "scan every prior `story.md` frontmatter" pass
+> with one compact read.
+
+A markdown file at the project root capturing the shared universe's
+accumulated state as concise lists — characters, locations, factions,
+recurring terms, timeline anchors, whatever axes the universe needs. The
+story skill reads `lore.md` for continuity instead of scanning N prior
+stories. After writing a new story, the skill **appends a per-story delta
+block** (`### #NN — <slug>` listing the *new* entities this story introduced)
+to the bottom of `lore.md`. The top-level curated lists at the top of the
+file are touched up by hand from those deltas over time; the skill only
+writes the per-story delta sections.
+
+Suggested skeleton:
+
+```markdown
+# Lore — <universe name>
+
+Compact continuity reference. Top-level lists are curated; per-story deltas
+at the bottom are appended automatically by the story skill and are the
+source of truth for what got introduced.
+
+## Characters
+- **<Name>** — <role>, <home location> (#NN)
+- ...
+
+## Locations
+- ...
+
+## <Other axes the universe needs: Ships, Factions, Terms, Timeline anchors>
+
+---
+
+## Per-story deltas
+
+### #NN — <slug>
+- Characters: <new names introduced by this story>
+- Locations: <new places>
+- Terms: <new terms / tech>
+- Timeline: <new anchors>
+```
+
+**Cost at scaffold time**: a `lore.md` file with the universe sketch from
+`profile.md` Section C (question 12) as the seed, and the per-story-deltas
+heading at the bottom. The first story's delta is appended by the story
+skill; subsequent stories accumulate from there. Top-level lists stay empty
+until the user (or a later session) curates them from the deltas.
+
+#### Archetype log — `.ai/archetypes.jsonl`
+
+> Replaces the render skill's "scan prior `stories/*/index.html` for
+> archetype" pass with one line-per-story log.
+
+A JSON-lines file at `.ai/archetypes.jsonl`. One object per rendered story,
+in story order:
+
+```jsonl
+{"slug":"<NN-slug>","archetype":"<short label>","palette":"<short label>","font_pair":"<display + body>","colors":{"bg":"#…","ink":"#…","accent":"#…"}}
+```
+
+The render skill:
+
+- **Before picking** an archetype for the new story: read the **last 3
+  lines**. Avoid reusing any of those archetypes, palettes, or font pairs
+  (per the [Format archetypes — variety rule](#format-archetypes--variety-rule)).
+- **After picking**: append a new line with the chosen archetype, dominant
+  palette, font pair, and three hex colors. Pick the colors that the page
+  actually uses for its dominant background, primary text, and accent.
+
+The `colors` block is required only if the agent also scaffolds the
+card-grid index pattern below; it costs nothing to include either way and
+keeps the file useful regardless of the index layout chosen.
+
+**Cost at scaffold time**: an empty `.ai/archetypes.jsonl`. The first
+rendered story appends the first line.
+
+#### Incremental project-index cache — `.ai/stories-index.json`
+
+> Per-slug cache of the frontmatter fields the index renders. Lets the
+> helper script refresh the index by patching only the changed slug,
+> instead of re-reading every `story.md` on every render.
+
+A JSON map keyed by slug:
+
+```json
+{
+  "01-...": {
+    "title": "...",
+    "protagonist": "...",
+    "setting": "...",
+    "date": "YYYY-MM-DD",
+    "words": "NNN"
+  }
+}
+```
+
+The helper script maintains it:
+
+- On per-story renders: update only that slug's entry from the on-disk
+  `story.md` frontmatter, save the cache, rewrite the entries block from
+  the cache.
+- On `--index-only`, or whenever the cache's slug set diverges from the
+  on-disk folder set, do a **full rebuild from disk** (and overwrite the
+  cache).
+
+The cache is a stale-safe optimization — the from-scratch rebuild path
+stays correct and is always reachable. Users never see the file; it's
+internal to the helper script.
+
+**Cost at scaffold time**: zero — the cache is auto-generated on the first
+helper-script invocation. The agent only needs to teach `render.py` to use
+it (the reference implementation does so out of the box).
+
+#### Parallel enrich + design
+
+> Orchestrator pattern: run `enrich` and the render skill's design phase
+> concurrently after `story.md` is written.
+
+The render skill's workflow splits cleanly:
+
+- **Design phase** (steps 1–5 of the render skill's
+  [Workflow](#workflow) section): read frontmatter, pick the artifact
+  framing, pick the archetype, design the HTML page from scratch. Output:
+  `index.html` with `data-story-body` markers but no `.w` / `.s` spans
+  yet.
+- **Apply phase** (step 6): run the helper script to wrap words, inject
+  popup behavior, and refresh the project index. Output: same
+  `index.html`, fully wired.
+
+The **apply phase** needs both `enrichment.toml` AND the designed
+`index.html`. The **design phase** only needs `story.md`. So `enrich` and
+the design phase have no dependency on each other and can run in parallel.
+
+If the agent supports parallel skill invocations, the orchestrator command
+dispatches `enrich` and the render-design phase in a single message right
+after `story.md` is written. Otherwise the pipeline stays serial — no harm
+done; the steps are still independent.
+
+**Cost at scaffold time**: zero — this is purely an orchestrator wiring
+choice. If the agent has no parallel-dispatch primitive, scaffold the
+orchestrator as a strict serial pipeline; the per-skill contracts don't
+change.
+
+#### Project index — card grid with hover preview
+
+> An alternative to the typewriter TOC pattern from [Part 2](#project-indexhtml-template).
+
+Where the TOC reads vertically as a numbered list, the card grid lays each
+story out as a hairline-bordered card in a 2-column grid, **newest-first**.
+The helper script emits each `<a class="entry">` with inline CSS variables
+sourced from the linked story's row in `.ai/archetypes.jsonl`:
+
+```html
+<a class="entry" href="stories/NN-slug/index.html"
+   style="--card-bg:#…;--card-ink:#…;--card-accent:#…">
+  ...
+</a>
+```
+
+On `:hover`, the card transitions to those values — its background swaps to
+the story's bg, text to the story's ink, border to the ink, and a small
+accent stripe wipes in across the top. The reader sees a real palette
+preview of the linked page before clicking.
+
+Sketch CSS (paint your own; the pattern is the point):
+
+```css
+.entries{
+  display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:0.9rem;
+}
+.entry{
+  display:flex; flex-direction:column; padding:0.95rem 1rem;
+  border:1px solid var(--ink); background:var(--bg);
+  color:inherit; text-decoration:none;
+  transition:background 0.3s, color 0.3s, border-color 0.3s;
+}
+.entry:hover{
+  background:var(--card-bg, var(--bg));
+  color:var(--card-ink, var(--ink));
+  border-color:var(--card-ink, var(--ink));
+}
+@media(max-width:640px){ .entries{ grid-template-columns:1fr } }
+```
+
+**Trade-offs vs. the TOC layout**:
+
+- *Pro*: newest entry is visible without scrolling; hover gives a real
+  palette preview before clicking; scales better as the corpus grows (a
+  20-card grid stays scannable; a 20-row TOC becomes a long list).
+- *Con*: depends on `.ai/archetypes.jsonl` carrying a `colors` block per
+  story. When a slug has no entry yet (e.g. a freshly bootstrapped story
+  before its archetype line is committed), the card should fall back to a
+  neutral default palette.
+- *Con*: each card has fixed dimensions; verbose `protagonist · setting`
+  metadata needs line-clamping to keep cards uniform.
+
+**Optional refinement — pair-swap ordering**. In a newest-first 2-column
+grid, the default layout puts the single newest story at top-left. If you
+want it at top-right instead — the natural "reading destination" of an LTR
+page — swap each row's pair so a 12-story corpus reads
+`11 | 12 / 09 | 10 / … / 01 | 02`. The single most recent story now lands
+at the top-right edge. Mirror for RTL.
+
+**Cost at scaffold time**: the agent picks one index layout — TOC or card
+grid — and builds the project around it. The two layouts share the same
+machine-marker contract (`<!-- STORIES:START -->` / `<!-- STORIES:END -->`)
+and the same per-story `<a class="entry">` slot, so the helper script's
+emit code differs only in markup + inline style, not in structure. The card
+grid depends on the archetype log above, so scaffold both together or
+neither.
 
 ---
 
