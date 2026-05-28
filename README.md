@@ -12,8 +12,10 @@ language.
 - **Per-story folders** at `stories/NN-slug/` containing:
   - `story.md` — pure-target-language story, 150–500 words, calibrated to your level.
   - `enrichment.toml` — per-word translations, parts of speech, lemmas, and
-    optional grammar notes; per-sentence translations too.
-  - `index.html` — bespoke single-file HTML with hover popups, hand-designed
+    optional grammar notes; per-sentence translations and optional sentence
+    notes; idiom entries with a whole-meaning gloss plus a word-by-word breakdown.
+  - `index.html` — bespoke single-file HTML with hover popups (word, idiom, and
+    full-sentence — the last also via Shift-hover on any word), hand-designed
     per story (no shared template).
 - **Three reusable skills** at `.ai/skills/{story,enrich,render}/` that
   encapsulate the pipeline: write → annotate → render.

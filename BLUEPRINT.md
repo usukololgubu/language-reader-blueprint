@@ -65,7 +65,7 @@ stories you can iterate on.
 | **Story** | One short text. Lives in `stories/NN-slug/` together with its enrichment data and rendered HTML. |
 | **Enrichment** | `enrichment.toml` — per-word translations, parts of speech, lemmas, and optional grammar; per-sentence and per-phrase translations. |
 | **Render** | The hand-designed `index.html` page produced for one story. Each story gets its own design — no shared base template. The designer (LLM) writes the page freely; a small helper script then applies enrichment to wrap words and inject popup behavior. |
-| **Hover popup** | The UI affordance shown when the user hovers (or taps) a wrapped word in the rendered HTML. Contains translation, POS, lemma, dictionary link, optional grammar block. |
+| **Hover popup** | The UI affordance shown when the user hovers (or taps) a wrapped word in the rendered HTML. Contains translation, POS, lemma, dictionary link, optional grammar block, and — for idioms — a per-word breakdown plus literal reading. A **sentence popup** variant (shown on a sentence's terminating mark, or when Shift is held over any word) carries the full-sentence translation and an optional grammar note. |
 | **Grammar mini-language** | A tiny markdown-ish syntax (`**form**`, `*term*`, `` `code` ``, `[[suffix]]`) used inside `enrichment.toml`'s `grammar` field, parsed at popup-show time by an inline JS function `mdToHtml()`. |
 | **Render helper script** | Small program (Python 3.11+ in the reference implementation) that applies `enrichment.toml` to a designer-authored HTML page: walks the element marked `data-story-body`, wraps words/sentence-terminators with popup spans, auto-injects popup CSS+JS, and refreshes the project index. Re-runnable. |
 | **Project index** | The root `index.html` — a reader-friendly table of contents listing all stories. |
@@ -167,11 +167,14 @@ this file.
       already knows cold.
     - Punctuation, numerals, and proper nouns are NEVER wrapped.
 
-14b. **Full-sentence translations — show them?**
-    The enrichment file always carries per-sentence translations. The renderer
-    decides what to do with them.
-    - **Off** (recommended for B2+): translations stay in the file, the page
-      never surfaces them. Word-level popups only.
+14b. **Full-sentence translations — how prominently?**
+    The enrichment file always carries per-sentence translations (and optional
+    grammar notes). The **sentence popup is always available** as a baseline:
+    the reader hovers a sentence's terminating mark, or holds **Shift** and
+    hovers any word, to see that sentence's translation (plus its note, if
+    any). This question only controls the additional *inline* surface:
+    - **Off** (recommended for B2+): no inline translations; the popup /
+      Shift-hover affordance is the only way to see them.
     - **Opt-in toggle** (recommended for A1–B1, default): a small chrome button
       reveals sentence translations inline on demand; off by default each session.
     - **Always on**: translations sit beneath each sentence permanently.
@@ -537,13 +540,29 @@ lemma = "la deriva"
 # the body. The agent splits the body into sentences (target-language-aware
 # punctuation: ., !, ?, ¡, ¿, 。, ！, ？ — pick what applies).
 #
-# Used by the renderer to optionally show full-sentence translations on a
-# secondary hover or click affordance (the design contract leaves this
-# optional; A1 readers benefit, B2+ readers may want it off).
+# Used by the renderer to surface full-sentence translations on the
+# sentence-terminator popup, while the reader holds Shift and hovers any word
+# in the sentence, and/or in an optional inline mode (the design contract
+# leaves the inline surface optional; A1 readers benefit, B2+ readers may want
+# it off).
+#
+# note : OPTIONAL. A sentence-scope explanation in the grammar mini-language,
+#        shown beneath the translation in the sentence popup. Use it for what a
+#        per-word grammar block can't capture: word order, why two tenses sit
+#        together, conditional-clause shape, an idiomatic whole clause, brief
+#        cultural context. Add it only where it genuinely helps a learner at
+#        this level; most sentences need none. Native language, kept short.
 
 [[sentences]]
 es = "El zumbido empezó el martes."
 tr = "Гудение началось во вторник."
+
+[[sentences]]
+es = "Si el receptor falla, Marco se queda sin contacto."
+tr = "Если приёмник откажет, Марко останется без связи."
+note = """
+*Условие (1-й тип):* `si` + *presente* в придаточном, *presente/futuro* в главном — реальное условие.
+"""
 
 [[sentences]]
 es = "Marco trabaja solo en el remolcador."
@@ -573,6 +592,31 @@ form = "Pioneer-12"
 tr = "Пионер-12 (зонд НАСА, 2031)"
 pos = "proper"
 note = "fictional NASA probe, launched 2031, the silent encounter in this story"
+
+# Idioms — multi-word units whose meaning isn't the sum of their parts. Add
+# `parts` (a per-word breakdown) and usually `literal` so the SINGLE popup
+# shows BOTH the whole-idiom meaning AND each component word with its own gloss.
+#   tr      : the whole-idiom meaning (the headline translation)
+#   pos     : "idiom"
+#   lemma   : keep it to retain the dictionary link (omit for non-dictionary sets)
+#   literal : OPTIONAL word-for-word reading, shown when it differs usefully
+#   parts   : ordered [{ w, tr }] — one per component word, literal glosses
+#   grammar : OPTIONAL extra context (register, how it inflects), mini-language
+
+[[phrases]]
+form = "tomar el pelo"
+tr = "разыгрывать, подшучивать"
+pos = "idiom"
+lemma = "tomar el pelo"
+literal = "брать за волосы"
+parts = [
+  { w = "tomar", tr = "брать" },
+  { w = "el",    tr = "(артикль м.р.)" },
+  { w = "pelo",  tr = "волосы" },
+]
+grammar = """
+Спрягается как обычный глагол: `te toma el pelo` ("он тебя разыгрывает").
+"""
 ```
 
 #### TOML key quoting
@@ -643,9 +687,14 @@ Rules:
    form where the morphology is non-obvious to a learner at this level. Skip
    it for transparent regulars at higher levels.
 5. Split the body into sentences. Translate each one as a `[[sentences]]`
-   entry.
+   entry. Add an optional `note` where a sentence-scope explanation genuinely
+   helps (word order, conditional clauses, tense interplay, an idiomatic whole
+   clause, cultural context) — this is what surfaces on the sentence popup and
+   under Shift-hover.
 6. Identify multi-word phrases that need single-popup treatment. Add them as
-   `[[phrases]]`.
+   `[[phrases]]`. For idioms (meaning not derivable from the parts), add
+   `pos = "idiom"`, a whole-meaning `tr`, a per-word `parts` breakdown, and
+   usually a `literal` reading — so the popup shows both layers at once.
 7. Write to `stories/NN-slug/enrichment.toml`.
 
 **Quality bar**:
@@ -745,13 +794,18 @@ the cascade). Classes the designer is expected to style:
   invariants set only `cursor` and a default `border-bottom: 1px dotted
   currentColor`; designer can override base color, hover color, transition).
 - `.pop` — the floating tooltip container
-- `.pop.has-grammar` — wider variant when a grammar block is present
-- `.pop.sentence` — variant for sentence-terminator hover
+- `.pop.has-grammar` — wider variant when a grammar block, idiom breakdown, or
+  sentence note is present
+- `.pop.idiom` — wider variant for idiom popups (whole meaning + breakdown)
+- `.pop.sentence` — variant for sentence popups (terminator hover and Shift-on-word)
 - `.pop .lemma`, `.pop .pos`, `.pop .tr` — popup contents in order
+- `.pop .breakdown` / `.bd-row` / `.bd-w` / `.bd-tr` — idiom word-by-word list
+- `.pop .literal` / `.lit-label` — idiom literal (word-for-word) reading
 - `.pop .g-block` and its descendants `b` / `i` / `code` / `u` — grammar block
-  rendered from the mini-language
+  rendered from the mini-language (`u` is a chip highlight, never an underline)
 - `.pop .link` — dictionary link
 - `.pop.sentence .s-label`, `.pop.sentence .s-tr` — sentence popup parts
+- `.pop.sentence .s-note` — optional sentence-level note block (styled like `.g-block`)
 
 To re-color word/sentence underlines on hover, use higher specificity
 (e.g. `article .w:hover`) since the auto-managed block uses `currentColor`.
@@ -796,16 +850,24 @@ Every meaningful word in the body is wrapped:
 ```html
 <span class="w"
       data-tr="brief native-language gloss"
-      data-pos="noun|verb|adj|adv|...|proper"
+      data-pos="noun|verb|adj|adv|...|proper|idiom"
       data-lemma="dictionary form"
-      data-grammar="**form** — *category*&#10;&#10;...">word</span>
+      data-grammar="**form** — *category*&#10;&#10;..."
+      data-si="N">word</span>
 
-<span class="s" data-tr="full sentence translation">.</span>
+<span class="s" data-tr="full sentence translation" data-note="...">.</span>
 ```
 
 - `data-grammar` is OPTIONAL and only present if the TOML had a `grammar` field.
-- Newlines inside `data-grammar` are encoded as `&#10;` (HTML numeric entity).
-  Double quotes inside any attribute are encoded as `&quot;`.
+- `data-si` is the 0-based index of the sentence this word belongs to. The
+  script also emits the per-story sentence array (translations + notes) so the
+  popup JS can look it up — see the "Shift-to-sentence" behavior below.
+- For an **idiom** `[[phrases]]` entry, the single span additionally carries
+  `data-parts` (a JSON array of `{w, tr}` component glosses) and optional
+  `data-literal` (the word-for-word reading).
+- `data-note` on a `.s` span is the sentence's optional `note`, omitted when empty.
+- Newlines inside `data-grammar` / `data-note` are encoded as `&#10;` (HTML
+  numeric entity). Double quotes inside any attribute are encoded as `&quot;`.
 - Punctuation, numerals, and proper nouns stay **outside** `.w` spans
   (unless flagged as a `[[phrases]]` entry, in which case the phrase becomes one
   span).
@@ -821,14 +883,31 @@ for every hover/tap. Positioned absolutely under JS control.
   short delay if the cursor enters the popup itself) hides it.
 - **Touch / mobile**: tap shows; tap elsewhere hides; second tap on the same
   word can navigate to the dictionary link.
-- The popup contains, in order:
+- The **word popup** contains, in order:
   1. **Lemma** in bold (display font).
   2. **Translation** (native language).
   3. **Part of speech** in small caps or italic, muted.
-  4. **Grammar block** rendered from `data-grammar` via `mdToHtml()` — only if
+  4. **Idiom breakdown** — only when the entry carries `data-parts`/`data-literal`:
+     a per-word `form → gloss` list (`.breakdown` › `.bd-row` › `.bd-w` + `.bd-tr`)
+     followed by an optional literal-meaning line (`.literal`). The popup also
+     gets an `idiom` class so its width can grow. This is rendered from the
+     `data-parts` JSON by the popup show-logic — **not** by `mdToHtml()`, which
+     stays untouched.
+  5. **Grammar block** rendered from `data-grammar` via `mdToHtml()` — only if
      present.
-  5. **Dictionary link** at the bottom: text like "Open in <Dict> ↗" or the
+  6. **Dictionary link** at the bottom: text like "Open in <Dict> ↗" or the
      native-language equivalent.
+- The **sentence popup** (shown on a `.s` terminator, and under Shift-hover —
+  see below) contains the full-sentence translation (`.s-label` + `.s-tr`) and,
+  if the sentence's `note` is present, a grammar/usage block (`.s-note`,
+  parsed with the same `mdToHtml()`). No lemma, POS, or dictionary link.
+- **Shift-to-sentence**: while the reader holds **Shift**, hovering *any* word
+  shows that word's full-sentence popup instead of the word popup (same content
+  as hovering the sentence's terminating mark). Releasing Shift reverts live
+  (wire `keydown`/`keyup` for the Shift key, not just `mouseenter`). Each `.w`
+  carries `data-si`; the script injects the per-story sentence array
+  (`[{tr, note}, …]`) ahead of the popup script so the JS can resolve it. `.s`
+  terminators always show the sentence popup regardless of Shift.
 - Positioning: above the word by default. Flip below if within ~120px of the
   viewport top. Keep within horizontal viewport bounds (clamp left/right).
 
@@ -875,17 +954,20 @@ The pattern is whatever the user picked (e.g.
 
 ##### Sentence translations
 
-Behavior is driven by `Sentence translations:` in `profile.md`:
+The sentence popup (terminator hover + Shift-on-word) **always** surfaces the
+translation and any `note` — that baseline is independent of the setting below,
+which controls only the additional *inline* surface, driven by
+`Sentence translations:` in `profile.md`:
 
-- **off** — do not surface them at all. The `[[sentences]]` data stays in the
-  TOML, unused by this page.
+- **off** — no inline translations; the popup / Shift-hover affordance is the
+  only way to see them.
 - **opt-in toggle** — render a small chrome button (e.g. "español ↔ español + tr").
   Clicking reveals the native-language translation inline beneath each sentence.
   Default state per page load is hidden.
 - **always on** — render each sentence with its translation directly beneath,
   styled subtly (smaller, muted) so it doesn't dominate the target text.
 
-Source the translations from `[[sentences]]` in the TOML.
+Source the translations (and notes) from `[[sentences]]` in the TOML.
 
 #### Found-document framing
 
@@ -945,9 +1027,9 @@ Two motion bits are auto-managed by the helper script (designers don't write the
 - **Reading-progress hairline** — a `<div class="reading-progress">` is appended to `<body>` by the popup script. Its width tracks `scrollTop / (scrollHeight − clientHeight)`. CSS lives in the `<style data-popup-invariants>` block. The bar reads its color from the CSS variable `--accent` on `:root` or `body` (fallback `currentColor`). Each story declares `:root { --accent: <story-color>; }` so the bar matches the palette. Hide per-page with `.reading-progress { display: none; }` if it doesn't fit the design — but prefer themed over hidden.
 - **`prefers-reduced-motion` guard** — a media query in the same invariants block short-circuits all CSS animations and transitions and hides the reading bar when the user has opted out. Designer-authored motion must rely on standard CSS `animation` / `transition` declarations so this guard takes effect. If JS-driven motion is unavoidable, gate it on `window.matchMedia('(prefers-reduced-motion: reduce)').matches`.
 
-Designer-authored motion (optional, per-story):
+Designer-authored motion (per-story):
 
-- **Ambient background motion** — a slow, low-opacity layer behind the text that reinforces mood: drifting starfield for cold sci-fi, slow conic-gradient drift for manuscript-warm, faint flicker/scanlines for hard sci-fi, ink-bleed wash for contemplative, paper-rustle for handwritten formats. Multi-second cycles, behind text, never animating the body text itself. Pure CSS keyframes or inline animated SVG — **no raster GIFs**, no external image URLs.
+- **Ambient background motion** (default — include a lightweight layer unless the story genuinely wants stillness) — a slow, low-opacity layer behind the text that reinforces mood: drifting starfield for cold sci-fi, slow conic-gradient drift for manuscript-warm, faint flicker/scanlines for hard sci-fi, ink-bleed wash for contemplative, paper-rustle for handwritten formats, dust motes / heat shimmer / slow parallax otherwise. Reach for one on most pages; a fully static page should be a deliberate choice (museum-placard quiet, a confessional letter), not the fallback. Multi-second cycles, behind text, never animating the body text itself. "Lightweight" is the operative word: one or two restrained layers, not a motion showcase. Pure CSS keyframes or inline animated SVG — **no raster GIFs**, no external image URLs.
 - **Refined popup entrance** — override the default `.pop` / `.pop.show` transition with a story-themed reveal (filter blur → clear, small `translateY`, soft `scale(0.96) → 1`, ink-bleed). The behavior invariants (`opacity`, `pointer-events`, the `::after` bridge) must stay intact — enrich, don't replace. The `.w:hover` underline can also animate (e.g. a gradient `background-size` growing from 0 to 100%) instead of the static dotted line.
 
 Motion is decorative — every animation remains readable, slow, and quiet.
@@ -1075,17 +1157,26 @@ column.
   line-height, real color contrast — including inside framed panels,
   marginalia, and split panes. Decorative scripts or display faces belong
   on titles, pull quotes, and metadata strips — never on the body prose.
+- **No underlined text unless there is a specific reason.** Don't use
+  `text-decoration: underline` for emphasis, links, or decoration — reach
+  for weight, color, italics, letter-spacing, hairline rules, or chip-style
+  highlights instead. The only sanctioned underlines are functional
+  affordances: the dotted `.w` / `.s` hover cue that marks a wrappable word
+  (keep it, or replace it with an equally clear non-underline cue), and the
+  grammar-block `[[…]]` highlight (`<u>` in the mini-language) which must
+  always be styled as a colored chip, never a literal underline.
 - **Decorative effects never overpower the story text.** Ambient gradients,
   framing chrome, marginalia, and split-pane visuals stay quieter than the
   prose. If the eye lands on the decoration before the words, dial it back.
   Pull quotes and highlights are the one allowed exception, and only
   because they *are* story text.
-- **Motion is avoided unless explicitly requested.** Default to fully
-  static. The ambient-motion options described elsewhere in this contract
-  are opt-in, not default; they apply when the story or the user clearly
-  calls for atmosphere. When motion is used, follow the existing motion
-  rules (slow, low-opacity, behind text, `prefers-reduced-motion`
-  respected, no raster GIFs).
+- **Lightweight ambient motion is the default, not the exception.** Most
+  pages should carry a quiet background-animation layer (see the Motion
+  section above); a fully static page is a deliberate choice for stories
+  that want stillness, not the fallback. Whenever motion is used it stays
+  slow, low-opacity, behind text, with `prefers-reduced-motion` respected
+  and no raster GIFs — and never pulls the eye before the prose. "Light"
+  is operative: one or two restrained layers, not a motion showcase.
 
 #### Project-index refresh
 
@@ -1522,6 +1613,30 @@ Designer-authored motion (ambient background layers, popup entrance animations, 
   but render the original casing in the visible text. The `.w` wrapper preserves
   text content.
 
+### Invariant 10 — Re-tokenization must be idempotent
+
+The helper script is re-runnable: it strips prior `.w` / `.s` spans, then
+re-wraps. That round-trip must be **idempotent** — running it twice produces
+the same bytes as running it once. The trap: the body text it reads back is
+already HTML (a literal `"` was escaped to `&quot;`, `&` to `&amp;` on the
+first run). If the tokenizer naively re-escapes that text, the second run turns
+`&quot;` into `&amp;quot;` and the entity name (`quot`, `nbsp`, …) gets wrapped
+as if it were a word.
+
+Two rules close it:
+
+1. **Unescape each text run before tokenizing**, so the tokenizer always works
+   on plain text (decode fully — tolerate accidental multi-level escaping like
+   `&amp;quot;`). Do this on the text *between* tags only, never on tag content.
+2. **Escape body text without touching quotes** (HTML text doesn't need `"` or
+   `'` escaped — only `&`, `<`, `>`). Attribute values still escape quotes
+   (`&quot;`). A literal `"` in the prose then stays a `"` and survives re-runs.
+
+**Symptom if missing**: a story renders fine the first time, but a later
+re-render shows literal `&quot;` / `&nbsp;` in the text and reports phantom
+"missed words" named `quot`, `nbsp`, `amp`. Bites any prose containing
+`" ' & < >` — especially pages migrated from an older renderer.
+
 ---
 
 ## Part 5 — Worked example
@@ -1817,7 +1932,12 @@ Things the agent must NOT do, even if it seems helpful.
   [Part 3.2 — TOML key quoting](#toml-key-quoting).
 - ❌ Fast, loud, or attention-grabbing motion. Ambient layers must be slow
   (multi-second cycles), low-opacity, and behind text. The body text itself
-  never moves once loaded.
+  never moves once loaded. (A quiet ambient layer is now the *default*, not a
+  special case — the rule constrains how it moves, not whether to include it.)
+- ❌ Underlined text for emphasis, links, headings, or decoration. Underlines
+  are reserved for the functional `.w` / `.s` hover affordance and the
+  chip-rendered `[[…]]` grammar highlight (which must never appear as a literal
+  underline). Everywhere else use weight, color, italics, spacing, or rules.
 - ❌ JS-driven motion that ignores `prefers-reduced-motion`. Gate JS
   animations on `matchMedia` or use CSS `animation` / `transition` so the
   auto-injected guard applies.
