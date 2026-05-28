@@ -777,10 +777,10 @@ The script auto-manages two blocks (the designer **must not** hand-edit them
 
 - `<style data-popup-invariants>…</style>` at end of `<head>` —
   behavior-critical popup CSS (pointer-events, hit-area bridge,
-  transitions), plus the reading-progress hairline styling and the
-  `prefers-reduced-motion` guard. See
-  [Part 4 invariants](#part-4--critical-invariants) for the specific rules
-  and why they're locked.
+  transitions), the sentence/idiom scope-highlight rule, plus the
+  reading-progress hairline styling and the `prefers-reduced-motion`
+  guard. See [Part 4 invariants](#part-4--critical-invariants) for the
+  specific rules and why they're locked.
 - `<script data-popup>…</script>` before `</body>` — popup
   show/hide/position logic, the grammar parser `mdToHtml()`, and the
   reading-progress scroll listener (which appends a
@@ -806,6 +806,9 @@ the cascade). Classes the designer is expected to style:
 - `.pop .link` — dictionary link
 - `.pop.sentence .s-label`, `.pop.sentence .s-tr` — sentence popup parts
 - `.pop.sentence .s-note` — optional sentence-level note block (styled like `.g-block`)
+- `.w.hl` / `.s.hl` — scope highlight applied to every span of the open
+  sentence, or to the open idiom span (the invariants ship a default
+  `--accent`/`currentColor` tint; designer can override the look)
 
 To re-color word/sentence underlines on hover, use higher specificity
 (e.g. `article .w:hover`) since the auto-managed block uses `currentColor`.
@@ -855,7 +858,7 @@ Every meaningful word in the body is wrapped:
       data-grammar="**form** — *category*&#10;&#10;..."
       data-si="N">word</span>
 
-<span class="s" data-tr="full sentence translation" data-note="...">.</span>
+<span class="s" data-tr="full sentence translation" data-si="N" data-note="...">.</span>
 ```
 
 - `data-grammar` is OPTIONAL and only present if the TOML had a `grammar` field.
@@ -866,6 +869,8 @@ Every meaningful word in the body is wrapped:
   `data-parts` (a JSON array of `{w, tr}` component glosses) and optional
   `data-literal` (the word-for-word reading).
 - `data-note` on a `.s` span is the sentence's optional `note`, omitted when empty.
+- A `.s` terminator carries the same `data-si` as the words of the sentence it
+  closes, so the popup logic can select and highlight the whole sentence.
 - Newlines inside `data-grammar` / `data-note` are encoded as `&#10;` (HTML
   numeric entity). Double quotes inside any attribute are encoded as `&quot;`.
 - Punctuation, numerals, and proper nouns stay **outside** `.w` spans
@@ -910,6 +915,13 @@ for every hover/tap. Positioned absolutely under JS control.
   terminators always show the sentence popup regardless of Shift.
 - Positioning: above the word by default. Flip below if within ~120px of the
   viewport top. Keep within horizontal viewport bounds (clamp left/right).
+- **Scope highlight**: whenever a popup opens, the source text it describes is
+  highlighted, and the highlight clears on hide. A **sentence popup** highlights
+  every `.w`/`.s` span sharing the anchor's `data-si` (the whole sentence — both
+  on `.s`-terminator hover and Shift-on-word). An **idiom popup** highlights the
+  single idiom span (the whole phrase). A plain word popup adds no scope
+  highlight. The highlight is the auto-injected `.hl` class — see
+  [Invariant 9](#invariant-9--sentenceidiom-scope-highlight).
 
 ##### `mdToHtml()` reference implementation
 
@@ -1595,6 +1607,36 @@ The helper script auto-injects a reading-progress `<div class="reading-progress"
 ```
 
 Designer-authored motion (ambient background layers, popup entrance animations, hover-underline draws, SVG keyframes) must use standard CSS `animation` / `transition` declarations rather than JS-driven `requestAnimationFrame` loops so this global guard actually applies. If JS-driven motion is unavoidable, gate it on `window.matchMedia('(prefers-reduced-motion: reduce)').matches`.
+
+### Invariant 9 — Sentence/idiom scope highlight
+
+When a popup opens, the reader should see *which* span of text it describes —
+not just the single terminator or hovered glyph. The popup show-logic adds an
+`hl` class to the whole scope and removes it on hide:
+
+- **Sentence popup** (on a `.s` terminator, or Shift-on-word): every `.w`/`.s`
+  span sharing the anchor's `data-si` gets `hl` — the whole sentence lights up,
+  not just the period. This is why `.s` terminators must carry `data-si`
+  (see the word-wrapping contract).
+- **Idiom popup**: the idiom is already a single span, so its one span gets `hl`.
+- **Plain word popup**: no scope highlight.
+
+The highlight visual lives in the auto-injected invariants block (not per-story
+CSS) so it reaches every story on render — including the many that never style
+`.active`. It's themed via `--accent`, falling back to the page's ink color, and
+designers may override it with higher specificity.
+
+```css
+.w.hl, .s.hl {
+  background: color-mix(in srgb, var(--accent, currentColor) 16%, transparent);
+  border-radius: 2px;
+}
+```
+
+**Symptom if missing**: opening a sentence popup highlights only the `.`/`?`/`!`,
+so the reader can't tell which run of words the translation covers. **Symptom if
+put in per-story CSS instead of the invariants block**: highlight works in the
+stories that happen to style it and silently does nothing in the rest.
 
 **Symptom if missing**: progress bar visible to users who opted out of motion; ambient animations keep running for vestibular-sensitive users. Accessibility regression that won't show up in casual QA.
 
