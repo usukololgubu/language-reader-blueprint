@@ -915,13 +915,16 @@ for every hover/tap. Positioned absolutely under JS control.
   terminators always show the sentence popup regardless of Shift.
 - Positioning: above the word by default. Flip below if within ~120px of the
   viewport top. Keep within horizontal viewport bounds (clamp left/right).
+  Compute coordinates in the document frame, then translate them into the
+  popup's `offsetParent` frame before assigning `top`/`left` — see
+  [Invariant 12](#invariant-12--popup-positioned-in-the-offsetparent-frame).
 - **Scope highlight**: whenever a popup opens, the source text it describes is
   highlighted, and the highlight clears on hide. A **sentence popup** highlights
   every `.w`/`.s` span sharing the anchor's `data-si` (the whole sentence — both
   on `.s`-terminator hover and Shift-on-word). An **idiom popup** highlights the
   single idiom span (the whole phrase). A plain word popup adds no scope
   highlight. The highlight is the auto-injected `.hl` class — see
-  [Invariant 9](#invariant-9--sentenceidiom-scope-highlight).
+  [Invariant 11](#invariant-11--sentenceidiom-scope-highlight).
 
 ##### `mdToHtml()` reference implementation
 
@@ -1608,36 +1611,6 @@ The helper script auto-injects a reading-progress `<div class="reading-progress"
 
 Designer-authored motion (ambient background layers, popup entrance animations, hover-underline draws, SVG keyframes) must use standard CSS `animation` / `transition` declarations rather than JS-driven `requestAnimationFrame` loops so this global guard actually applies. If JS-driven motion is unavoidable, gate it on `window.matchMedia('(prefers-reduced-motion: reduce)').matches`.
 
-### Invariant 9 — Sentence/idiom scope highlight
-
-When a popup opens, the reader should see *which* span of text it describes —
-not just the single terminator or hovered glyph. The popup show-logic adds an
-`hl` class to the whole scope and removes it on hide:
-
-- **Sentence popup** (on a `.s` terminator, or Shift-on-word): every `.w`/`.s`
-  span sharing the anchor's `data-si` gets `hl` — the whole sentence lights up,
-  not just the period. This is why `.s` terminators must carry `data-si`
-  (see the word-wrapping contract).
-- **Idiom popup**: the idiom is already a single span, so its one span gets `hl`.
-- **Plain word popup**: no scope highlight.
-
-The highlight visual lives in the auto-injected invariants block (not per-story
-CSS) so it reaches every story on render — including the many that never style
-`.active`. It's themed via `--accent`, falling back to the page's ink color, and
-designers may override it with higher specificity.
-
-```css
-.w.hl, .s.hl {
-  background: color-mix(in srgb, var(--accent, currentColor) 16%, transparent);
-  border-radius: 2px;
-}
-```
-
-**Symptom if missing**: opening a sentence popup highlights only the `.`/`?`/`!`,
-so the reader can't tell which run of words the translation covers. **Symptom if
-put in per-story CSS instead of the invariants block**: highlight works in the
-stories that happen to style it and silently does nothing in the rest.
-
 **Symptom if missing**: progress bar visible to users who opted out of motion; ambient animations keep running for vestibular-sensitive users. Accessibility regression that won't show up in casual QA.
 
 ### Invariant 9 — Word-boundary edge cases
@@ -1678,6 +1651,70 @@ Two rules close it:
 re-render shows literal `&quot;` / `&nbsp;` in the text and reports phantom
 "missed words" named `quot`, `nbsp`, `amp`. Bites any prose containing
 `" ' & < >` — especially pages migrated from an older renderer.
+
+### Invariant 11 — Sentence/idiom scope highlight
+
+When a popup opens, the reader should see *which* span of text it describes —
+not just the single terminator or hovered glyph. The popup show-logic adds an
+`hl` class to the whole scope and removes it on hide:
+
+- **Sentence popup** (on a `.s` terminator, or Shift-on-word): every `.w`/`.s`
+  span sharing the anchor's `data-si` gets `hl` — the whole sentence lights up,
+  not just the period. This is why `.s` terminators must carry `data-si`
+  (see the word-wrapping contract).
+- **Idiom popup**: the idiom is already a single span, so its one span gets `hl`.
+- **Plain word popup**: no scope highlight.
+
+The highlight visual lives in the auto-injected invariants block (not per-story
+CSS) so it reaches every story on render — including the many that never style
+`.active`. It's themed via `--accent`, falling back to the page's ink color, and
+designers may override it with higher specificity.
+
+```css
+.w.hl, .s.hl {
+  background: color-mix(in srgb, var(--accent, currentColor) 16%, transparent);
+  border-radius: 2px;
+}
+```
+
+**Symptom if missing**: opening a sentence popup highlights only the `.`/`?`/`!`,
+so the reader can't tell which run of words the translation covers. **Symptom if
+put in per-story CSS instead of the invariants block**: highlight works in the
+stories that happen to style it and silently does nothing in the rest.
+
+### Invariant 12 — Popup positioned in the offsetParent frame
+
+The popup is mounted on `<body>` and positioned `absolute`, so its `top`/`left`
+resolve against its **offsetParent** (the nearest positioned ancestor), not the
+document. If a story gives `<body>` (or any popup ancestor) `position: relative`
+— common, e.g. to anchor a `.back` link or a decorative layer — and a child
+pushes the body down (a first child with `margin-top`, padding, etc.), the
+offsetParent's origin no longer coincides with the document origin.
+
+`getBoundingClientRect()` + `scrollY` give the word's position in **document**
+coordinates. Assigning those straight to `top`/`left` then double-counts the
+offsetParent's own offset, so the popup renders shifted by that amount —
+classically, the popup meant to sit *above* the word lands with its bottom edge
+*below* the word (and vice-versa when flipped). Compute in the document frame,
+then subtract the offsetParent's document-origin (its rect + scroll + border)
+before assigning:
+
+```js
+var host = p.offsetParent;
+if (host){
+  var hr = host.getBoundingClientRect(), cs = getComputedStyle(host);
+  top  -= hr.top  + window.scrollY + (parseFloat(cs.borderTopWidth)  || 0);
+  left -= hr.left + window.scrollX + (parseFloat(cs.borderLeftWidth) || 0);
+}
+```
+
+When the offsetParent already sits at the document origin (no positioned
+ancestor, or a positioned body at the top) the subtraction is zero — so this is
+safe for every story, not just the offset ones.
+
+**Symptom if missing**: in stories with a positioned, pushed-down `<body>`, the
+popup overlaps the word it describes and the words around it, making it hard to
+hover a neighbouring word.
 
 ---
 
